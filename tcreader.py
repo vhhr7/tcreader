@@ -1,7 +1,8 @@
 import streamlit as st
 import ffmpeg
 import re
-import tempfile
+import pandas as pd
+from io import BytesIO
 
 def seconds_to_timecode(seconds, frame_rate=23.976):
     """Converts a duration in seconds to a timecode `HH:MM:SS:FF`."""
@@ -66,33 +67,28 @@ def add_timecodes(tc1, tc2):
     total_seconds = seconds1 + seconds2
     return seconds_to_timecode(total_seconds, frame_rate)
 
-def process_metadata(file_paths, file_type):
+def process_metadata(file, file_type):
     result_message = ""
-    for file_path in file_paths:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(file_path.read())
-            temp_file_path = temp_file.name
-        
-        metadata = ffmpeg.probe(temp_file_path)
-        if file_type == 'audio':
-            sample_rate = get_sample_rate(metadata)
-            time_reference = get_time_reference(metadata)
-            start_seconds = time_reference / sample_rate
-            start_timecode = seconds_to_timecode(start_seconds, 23.976)
-            result_message += (f"Audio Results ({file_path.name}):\n"
-                               f"Time Reference: {time_reference}\n"
-                               f"Sample Rate: {sample_rate}\n"
-                               f"Start Timecode: {start_timecode}\n\n")
-        elif file_type == 'video':
-            frame_rate = get_frame_rate(metadata)
-            start_timecode = get_timecode(metadata)
-            duration = float(metadata['format']['duration'])
-            duration_timecode = seconds_to_timecode(duration, frame_rate)
-            end_timecode = add_timecodes(start_timecode, duration_timecode)
-            result_message += (f"Video Results ({file_path.name}):\n"
-                               f"Start Timecode: {start_timecode}\n"
-                               f"End Timecode: {end_timecode}\n"
-                               f"Duration in Timecode Format: {duration_timecode}\n\n")
+    metadata = ffmpeg.probe(file)
+    if file_type == 'audio':
+        sample_rate = get_sample_rate(metadata)
+        time_reference = get_time_reference(metadata)
+        start_seconds = time_reference / sample_rate
+        start_timecode = seconds_to_timecode(start_seconds, 23.976)
+        result_message += (f"Audio Results ({file.name}):\n"
+                           f"Time Reference: {time_reference}\n"
+                           f"Sample Rate: {sample_rate}\n"
+                           f"Start Timecode: {start_timecode}\n\n")
+    elif file_type == 'video':
+        frame_rate = get_frame_rate(metadata)
+        start_timecode = get_timecode(metadata)
+        duration = float(metadata['format']['duration'])
+        duration_timecode = seconds_to_timecode(duration, frame_rate)
+        end_timecode = add_timecodes(start_timecode, duration_timecode)
+        result_message += (f"Video Results ({file.name}):\n"
+                           f"Start Timecode: {start_timecode}\n"
+                           f"End Timecode: {end_timecode}\n"
+                           f"Duration in Timecode Format: {duration_timecode}\n\n")
     return result_message
 
 def display_footer():
@@ -144,12 +140,18 @@ def main():
     # Button to process metadata
     if st.button("Process Metadata"):
         if audio_files:
-            audio_results = process_metadata(audio_files, 'audio')
-            st.text_area("Audio Results", value=audio_results, height=200)
+            for audio_file in audio_files:
+                audio_bytes = audio_file.read()
+                audio_buffer = BytesIO(audio_bytes)
+                audio_results = process_metadata(audio_buffer, 'audio')
+                st.text_area(f"Audio Results ({audio_file.name})", value=audio_results, height=200)
         
         if video_files:
-            video_results = process_metadata(video_files, 'video')
-            st.text_area("Video Results", value=video_results, height=200)
+            for video_file in video_files:
+                video_bytes = video_file.read()
+                video_buffer = BytesIO(video_bytes)
+                video_results = process_metadata(video_buffer, 'video')
+                st.text_area(f"Video Results ({video_file.name})", value=video_results, height=200)
 
     # Display footer
     display_footer()
